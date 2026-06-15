@@ -1,0 +1,19 @@
+{
+  "data": {
+    "products": [
+      {
+        "id": 179978204,
+        "name": "Наушники беспроводные TWS Bluetooth",
+        "priceU": 499000,
+        "salePriceU": 299900,
+        "totalQuantity": 12,
+        "sizes": [
+          {
+            "price": { "basic": 499000, "product": 299900, "total": 289900 },
+            "stocks": [ { "qty": 12 } ]
+          }
+        ]
+      }
+    ]
+  }
+}
