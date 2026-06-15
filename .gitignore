@@ -1,0 +1,14 @@
+# Go
+/backend/server
+
+# Node
+node_modules/
+dist/
+
+# Окружение
+.env
+*.local
+
+# IDE
+.idea/
+.vscode/
