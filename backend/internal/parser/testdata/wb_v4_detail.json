@@ -1,0 +1,15 @@
+{
+  "products": [
+    {
+      "id": 739987616,
+      "name": "Креатин Голд Кевин Леврон Creatine Gold 300 гр",
+      "totalQuantity": 7,
+      "sizes": [
+        {
+          "price": { "basic": 196500, "product": 169300 },
+          "stocks": [ { "qty": 7 } ]
+        }
+      ]
+    }
+  ]
+}

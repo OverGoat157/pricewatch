@@ -13,7 +13,16 @@ import (
 	"time"
 )
 
-const wbDetailURL = "https://card.wb.ru/cards/v2/detail"
+// Адреса карточного API WB пробуются по очереди: площадка периодически меняет
+// версию пути, поэтому держим несколько кандидатов. Точный адрес можно задать
+// через переменную окружения WB_DETAIL_URL (метод UseEndpoints).
+var defaultWBBases = []string{
+	"https://card.wb.ru/cards/v4/detail", // актуальный (проверено 2026-06)
+	"https://card.wb.ru/cards/v2/detail",
+	"https://card.wb.ru/cards/v1/detail",
+	"https://card.wb.ru/cards/v3/detail",
+	"https://card.wb.ru/cards/detail",
+}
 
 var (
 	wbCatalogRe = regexp.MustCompile(`catalog/(\d+)`)
@@ -22,14 +31,21 @@ var (
 
 // WB — парсер Wildberries через публичный JSON API карточки товара.
 type WB struct {
-	client  *http.Client
-	baseURL string // вынесен в поле, чтобы подменять в тестах
+	client *http.Client
+	bases  []string
 }
 
 func NewWB() *WB {
 	return &WB{
-		client:  &http.Client{Timeout: 10 * time.Second},
-		baseURL: wbDetailURL,
+		client: &http.Client{Timeout: 10 * time.Second},
+		bases:  append([]string(nil), defaultWBBases...),
+	}
+}
+
+// UseEndpoints переопределяет список адресов (для WB_DETAIL_URL и тестов).
+func (w *WB) UseEndpoints(urls ...string) {
+	if len(urls) > 0 {
+		w.bases = urls
 	}
 }
 
@@ -49,28 +65,46 @@ func (w *WB) ExternalID(input string) (string, bool) {
 }
 
 func (w *WB) Fetch(ctx context.Context, externalID string) (ProductInfo, error) {
-	reqURL := fmt.Sprintf("%s?appType=1&curr=rub&dest=-1257786&nm=%s", w.baseURL, url.QueryEscape(externalID))
+	var errs []string
+	for _, base := range w.bases {
+		info, err := w.fetchFrom(ctx, base, externalID)
+		if err == nil {
+			return info, nil
+		}
+		errs = append(errs, err.Error())
+	}
+	if len(errs) == 0 {
+		errs = append(errs, "не задано ни одного адреса")
+	}
+	return ProductInfo{}, fmt.Errorf("wb: не удалось получить товар %s (%s)", externalID, strings.Join(errs, "; "))
+}
+
+func (w *WB) fetchFrom(ctx context.Context, base, externalID string) (ProductInfo, error) {
+	reqURL := fmt.Sprintf("%s?appType=1&curr=rub&dest=-1257786&spp=30&nm=%s", base, url.QueryEscape(externalID))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return ProductInfo{}, err
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	req.Header.Set("Accept-Language", "ru-RU,ru;q=0.9")
+	req.Header.Set("Origin", "https://www.wildberries.ru")
+	req.Header.Set("Referer", "https://www.wildberries.ru/")
 
 	resp, err := w.client.Do(req)
 	if err != nil {
-		return ProductInfo{}, fmt.Errorf("wb: запрос: %w", err)
+		return ProductInfo{}, fmt.Errorf("%s: %w", base, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return ProductInfo{}, fmt.Errorf("wb: неожиданный статус %d", resp.StatusCode)
+		return ProductInfo{}, fmt.Errorf("%s: статус %d", base, resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 5<<20))
 	if err != nil {
-		return ProductInfo{}, fmt.Errorf("wb: чтение ответа: %w", err)
+		return ProductInfo{}, fmt.Errorf("%s: чтение ответа: %w", base, err)
 	}
 	return parseWB(body, externalID)
 }
@@ -78,9 +112,20 @@ func (w *WB) Fetch(ctx context.Context, externalID string) (ProductInfo, error) 
 // --- разбор ответа (вынесен отдельно, тестируется на фикстуре) ---
 
 type wbResponse struct {
+	// v2 и старее: товары лежат внутри "data"
 	Data struct {
 		Products []wbProduct `json:"products"`
 	} `json:"data"`
+	// v4: товары на верхнем уровне
+	Products []wbProduct `json:"products"`
+}
+
+// products возвращает список товаров независимо от версии ответа.
+func (r wbResponse) products() []wbProduct {
+	if len(r.Data.Products) > 0 {
+		return r.Data.Products
+	}
+	return r.Products
 }
 
 type wbProduct struct {
@@ -108,11 +153,12 @@ func parseWB(body []byte, externalID string) (ProductInfo, error) {
 	if err := json.Unmarshal(body, &r); err != nil {
 		return ProductInfo{}, fmt.Errorf("wb: разбор JSON: %w", err)
 	}
-	if len(r.Data.Products) == 0 {
+	products := r.products()
+	if len(products) == 0 {
 		return ProductInfo{}, fmt.Errorf("wb: товар %s не найден", externalID)
 	}
 
-	p := r.Data.Products[0]
+	p := products[0]
 	price := resolvePrice(p)
 	if price <= 0 {
 		return ProductInfo{}, fmt.Errorf("wb: не удалось определить цену товара %s", externalID)
