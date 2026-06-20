@@ -34,8 +34,14 @@ func main() {
 
 	st := store.New(pool)
 	authSvc := auth.New(cfg.JWTSecret)
+	// Источник цен — Wildberries. При недоступности возвращается ошибка
+	// (без подмены данными). Точный адрес API можно задать через WB_DETAIL_URL.
 	wb := parser.NewWB()
-	tg := notify.NewTelegram(cfg.TelegramToken)
+	if cfg.WBDetailURL != "" {
+		wb.UseEndpoints(cfg.WBDetailURL)
+		log.Printf("WB endpoint переопределён: %s", cfg.WBDetailURL)
+	}
+	tg := notify.NewTelegram(cfg.TelegramToken, cfg.TelegramProxy)
 	checker := scheduler.NewChecker(st, wb, tg)
 
 	// фоновые процессы

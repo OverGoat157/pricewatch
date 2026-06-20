@@ -23,6 +23,12 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_BOT_NAME: ${TELEGRAM_BOT_NAME:-}
       CHECK_INTERVAL_MINUTES: ${CHECK_INTERVAL_MINUTES:-30}
+      WB_DETAIL_URL: ${WB_DETAIL_URL:-}
+      TELEGRAM_PROXY: ${TELEGRAM_PROXY:-}
+    extra_hosts:
+      # чтобы из контейнера был доступен прокси, запущенный на хосте
+      # (TELEGRAM_PROXY=socks5://host.docker.internal:1080)
+      - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy

@@ -16,6 +16,8 @@ type Config struct {
 	TelegramToken   string        // токен бота из @BotFather
 	TelegramBotName string        // username бота без @, для deep-link t.me/<name>
 	CheckInterval   time.Duration // как часто планировщик проверяет цены
+	WBDetailURL     string        // переопределение адреса WB API (если задан)
+	TelegramProxy   string        // прокси для api.telegram.org (если заблокирован)
 }
 
 // Load читает .env (если есть) и собирает конфигурацию.
@@ -29,6 +31,8 @@ func Load() Config {
 		TelegramToken:   getenv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramBotName: getenv("TELEGRAM_BOT_NAME", ""),
 		CheckInterval:   time.Duration(getenvInt("CHECK_INTERVAL_MINUTES", 30)) * time.Minute,
+		WBDetailURL:     getenv("WB_DETAIL_URL", ""),
+		TelegramProxy:   getenv("TELEGRAM_PROXY", ""),
 	}
 }
 

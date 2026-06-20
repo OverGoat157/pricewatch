@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -16,8 +18,24 @@ type Telegram struct {
 	client *http.Client
 }
 
-func NewTelegram(token string) *Telegram {
-	return &Telegram{token: token, client: &http.Client{Timeout: 35 * time.Second}}
+// NewTelegram создаёт клиент Telegram. proxyURL (необязательно) задаёт прокси —
+// http://, https:// или socks5:// — на случай, когда api.telegram.org недоступен
+// напрямую (например, заблокирован у провайдера). WB-запросы идут отдельно и
+// этот прокси не используют.
+func NewTelegram(token, proxyURL string) *Telegram {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if proxyURL != "" {
+		if u, err := url.Parse(proxyURL); err == nil {
+			transport.Proxy = http.ProxyURL(u)
+			log.Printf("telegram: запросы идут через прокси %s", u.Redacted())
+		} else {
+			log.Printf("telegram: некорректный TELEGRAM_PROXY (%v), прокси не используется", err)
+		}
+	}
+	return &Telegram{
+		token:  token,
+		client: &http.Client{Timeout: 35 * time.Second, Transport: transport},
+	}
 }
 
 // Enabled — задан ли токен бота.
