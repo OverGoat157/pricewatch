@@ -29,6 +29,7 @@ type Subscription struct {
 	ProductID   int64
 	TargetPrice int64 // копейки
 	IsActive    bool
+	Notified    bool // уже отправлено уведомление о достижении целевой цены
 	CreatedAt   time.Time
 }
 

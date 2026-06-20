@@ -56,17 +56,13 @@ func (c *Checker) CheckAll(ctx context.Context) {
 }
 
 // CheckProduct опрашивает один товар, пишет точку истории, обновляет последнюю
-// цену и шлёт уведомления подписчикам, у которых цена пересекла цель сверху вниз.
+// цену и шлёт уведомления подписчикам, у которых цена достигла целевой.
 func (c *Checker) CheckProduct(ctx context.Context, p models.Product) error {
 	info, err := c.parser.Fetch(ctx, p.ExternalID)
 	if err != nil {
 		return err
 	}
 
-	prevPrice, hadPrev, err := c.store.PreviousPrice(ctx, p.ID)
-	if err != nil {
-		return err
-	}
 	if err := c.store.AddPricePoint(ctx, p.ID, info.Price, info.IsAvailable); err != nil {
 		return err
 	}
@@ -74,14 +70,14 @@ func (c *Checker) CheckProduct(ctx context.Context, p models.Product) error {
 		return err
 	}
 
-	c.notifySubscribers(ctx, p, info, prevPrice, hadPrev)
+	c.notifySubscribers(ctx, p, info)
 	return nil
 }
 
-// notifySubscribers рассылает уведомления тем, для кого цена ТОЛЬКО ЧТО опустилась
-// до целевой или ниже. Условие «пересечения» (предыдущая цена была выше цели)
-// защищает от повторного спама, пока цена держится низкой.
-func (c *Checker) notifySubscribers(ctx context.Context, p models.Product, info parser.ProductInfo, prevPrice int64, hadPrev bool) {
+// notifySubscribers шлёт уведомление, когда цена достигла целевой (текущая ≤ цели).
+// Флаг notified гарантирует разовую отправку: повторное уведомление придёт только
+// после того, как цена снова поднимется выше цели и затем опять опустится.
+func (c *Checker) notifySubscribers(ctx context.Context, p models.Product, info parser.ProductInfo) {
 	subs, err := c.store.ActiveSubscriptionsForProduct(ctx, p.ID)
 	if err != nil {
 		log.Printf("планировщик: подписки товара %d: %v", p.ID, err)
@@ -89,9 +85,17 @@ func (c *Checker) notifySubscribers(ctx context.Context, p models.Product, info 
 	}
 	for _, sub := range subs {
 		reached := info.Price <= sub.TargetPrice
-		crossed := !hadPrev || prevPrice > sub.TargetPrice
-		if reached && crossed {
+		switch {
+		case reached && !sub.Notified:
 			c.sendNotification(ctx, sub, p, info)
+			if err := c.store.SetSubscriptionNotified(ctx, sub.ID, true); err != nil {
+				log.Printf("планировщик: отметка notified подписки %d: %v", sub.ID, err)
+			}
+		case !reached && sub.Notified:
+			// цена снова выше цели — сбрасываем, чтобы уведомить при следующем снижении
+			if err := c.store.SetSubscriptionNotified(ctx, sub.ID, false); err != nil {
+				log.Printf("планировщик: сброс notified подписки %d: %v", sub.ID, err)
+			}
 		}
 	}
 }

@@ -33,9 +33,12 @@ CREATE TABLE IF NOT EXISTS subscriptions (
     product_id   BIGINT      NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     target_price BIGINT      NOT NULL,                        -- желаемая цена, копейки
     is_active    BOOLEAN     NOT NULL DEFAULT true,
+    notified     BOOLEAN     NOT NULL DEFAULT false,          -- уведомление о достижении цели уже отправлено
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (user_id, product_id)
 );
+-- для уже существующих БД (таблица создана без notified)
+ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS notified BOOLEAN NOT NULL DEFAULT false;
 
 -- История цен по товару (точки графика).
 CREATE TABLE IF NOT EXISTS price_history (

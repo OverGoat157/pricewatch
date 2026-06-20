@@ -143,7 +143,7 @@ func (s *Store) CreateSubscription(ctx context.Context, userID, productID, targe
 	err := s.pool.QueryRow(ctx,
 		`INSERT INTO subscriptions (user_id, product_id, target_price)
 		 VALUES ($1, $2, $3)
-		 ON CONFLICT (user_id, product_id) DO UPDATE SET target_price = EXCLUDED.target_price, is_active = true
+		 ON CONFLICT (user_id, product_id) DO UPDATE SET target_price = EXCLUDED.target_price, is_active = true, notified = false
 		 RETURNING id, user_id, product_id, target_price, is_active, created_at`,
 		userID, productID, target,
 	).Scan(&sub.ID, &sub.UserID, &sub.ProductID, &sub.TargetPrice, &sub.IsActive, &sub.CreatedAt)
@@ -199,7 +199,7 @@ func (s *Store) GetSubscription(ctx context.Context, userID, subID int64) (model
 
 func (s *Store) UpdateSubscription(ctx context.Context, userID, subID, target int64, isActive bool) error {
 	tag, err := s.pool.Exec(ctx,
-		`UPDATE subscriptions SET target_price = $3, is_active = $4 WHERE user_id = $1 AND id = $2`,
+		`UPDATE subscriptions SET target_price = $3, is_active = $4, notified = false WHERE user_id = $1 AND id = $2`,
 		userID, subID, target, isActive)
 	if err != nil {
 		return err
@@ -225,7 +225,7 @@ func (s *Store) DeleteSubscription(ctx context.Context, userID, subID int64) err
 // ActiveSubscriptionsForProduct — активные подписки на товар (для рассылки уведомлений).
 func (s *Store) ActiveSubscriptionsForProduct(ctx context.Context, productID int64) ([]models.Subscription, error) {
 	rows, err := s.pool.Query(ctx,
-		`SELECT id, user_id, product_id, target_price, is_active, created_at
+		`SELECT id, user_id, product_id, target_price, is_active, notified, created_at
 		 FROM subscriptions WHERE product_id = $1 AND is_active = true`, productID)
 	if err != nil {
 		return nil, err
@@ -235,12 +235,19 @@ func (s *Store) ActiveSubscriptionsForProduct(ctx context.Context, productID int
 	var out []models.Subscription
 	for rows.Next() {
 		var sub models.Subscription
-		if err := rows.Scan(&sub.ID, &sub.UserID, &sub.ProductID, &sub.TargetPrice, &sub.IsActive, &sub.CreatedAt); err != nil {
+		if err := rows.Scan(&sub.ID, &sub.UserID, &sub.ProductID, &sub.TargetPrice, &sub.IsActive, &sub.Notified, &sub.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, sub)
 	}
 	return out, rows.Err()
+}
+
+// SetSubscriptionNotified помечает, отправлено ли уведомление о достижении цели.
+func (s *Store) SetSubscriptionNotified(ctx context.Context, subID int64, notified bool) error {
+	_, err := s.pool.Exec(ctx,
+		`UPDATE subscriptions SET notified = $2 WHERE id = $1`, subID, notified)
+	return err
 }
 
 // ---------- История цен ----------

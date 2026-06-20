@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -52,6 +53,7 @@ func (s *Server) handleCreateSubscription(w http.ResponseWriter, r *http.Request
 
 	info, err := s.parser.Fetch(r.Context(), externalID)
 	if err != nil {
+		log.Printf("создание подписки: парсинг артикула %s: %v", externalID, err)
 		writeError(w, http.StatusBadGateway, "не удалось получить данные товара (проверьте ссылку или повторите позже)")
 		return
 	}
@@ -190,6 +192,7 @@ func (s *Server) handleCheckSubscription(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := s.checker.CheckProduct(r.Context(), product); err != nil {
+		log.Printf("проверка цены товара %s: %v", product.ExternalID, err)
 		writeError(w, http.StatusBadGateway, "не удалось получить актуальную цену")
 		return
 	}
